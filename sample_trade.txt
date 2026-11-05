@@ -1,0 +1,8 @@
+﻿From: Front Office Desk
+To: Middle Office
+Subject: Trade Execution - JP Morgan
+
+Hi team,
+We just executed a Spot FX trade with JP Morgan. We are buying 10,000,000 EUR and selling USD at a rate of 1.0850. Trade date is today, Nov 5, 2026, and value date is Nov 7, 2026. 
+
+Please book this immediately and confirm.
