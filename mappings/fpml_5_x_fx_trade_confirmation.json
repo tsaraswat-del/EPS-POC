@@ -1,0 +1,111 @@
+{
+  "name": "FpML 5.x FX Trade Confirmation",
+  "description": "Industry standard FpML confirmation for FX Spot / Forward / NDF trades",
+  "mappings": [
+    {
+      "target_path": "asset_class",
+      "xpath": "//assetClass/text()",
+      "data_type": "string",
+      "default_value": "FX",
+      "transform": null
+    },
+    {
+      "target_path": "trade_type",
+      "xpath": "//fxSingleLeg/productType/text()",
+      "data_type": "string",
+      "default_value": "FX Forward",
+      "transform": null
+    },
+    {
+      "target_path": "reporting_party",
+      "xpath": "//party[@id='party1']/partyName/text() | //party[@id='party1']/partyId/text()",
+      "data_type": "string",
+      "default_value": "BNP Paribas FX Desk",
+      "transform": null
+    },
+    {
+      "target_path": "counterparty",
+      "xpath": "//party[@id='party2']/partyName/text() | //party[@id='party2']/partyId/text()",
+      "data_type": "string",
+      "default_value": "Goldman Sachs International",
+      "transform": null
+    },
+    {
+      "target_path": "account_id",
+      "xpath": "//party[@id='party1']//accountId/text()",
+      "data_type": "string",
+      "default_value": "ACC-CORP-984210-FX",
+      "transform": null
+    },
+    {
+      "target_path": "direction",
+      "xpath": "//direction/text()",
+      "data_type": "string",
+      "default_value": "BUY",
+      "transform": "upper"
+    },
+    {
+      "target_path": "base_currency",
+      "xpath": "//exchangedCurrency1/paymentAmount/currency/text()",
+      "data_type": "string",
+      "default_value": "EUR",
+      "transform": null
+    },
+    {
+      "target_path": "quote_currency",
+      "xpath": "//exchangedCurrency2/paymentAmount/currency/text()",
+      "data_type": "string",
+      "default_value": "USD",
+      "transform": null
+    },
+    {
+      "target_path": "reporting_party_buys",
+      "xpath": "//exchangedCurrency1/paymentAmount/currency/text()",
+      "data_type": "string",
+      "default_value": "EUR",
+      "transform": null
+    },
+    {
+      "target_path": "reporting_party_sells",
+      "xpath": "//exchangedCurrency2/paymentAmount/currency/text()",
+      "data_type": "string",
+      "default_value": "USD",
+      "transform": null
+    },
+    {
+      "target_path": "notional_amount",
+      "xpath": "//exchangedCurrency1/paymentAmount/amount/text()",
+      "data_type": "float",
+      "default_value": "25000000.00",
+      "transform": null
+    },
+    {
+      "target_path": "counter_amount",
+      "xpath": "//exchangedCurrency2/paymentAmount/amount/text()",
+      "data_type": "float",
+      "default_value": "27312500.00",
+      "transform": null
+    },
+    {
+      "target_path": "trade_date",
+      "xpath": "//tradeHeader/tradeDate/text()",
+      "data_type": "date",
+      "default_value": "2026-11-05",
+      "transform": null
+    },
+    {
+      "target_path": "value_date",
+      "xpath": "//fxSingleLeg/valueDate/text()",
+      "data_type": "date",
+      "default_value": "2027-02-15",
+      "transform": null
+    },
+    {
+      "target_path": "rate",
+      "xpath": "//exchangeRate/rate/text()",
+      "data_type": "float",
+      "default_value": "1.0925",
+      "transform": null
+    }
+  ]
+}

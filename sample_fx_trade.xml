@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FXTradeConfirmation>
+  <Header>
+    <MessageId>MSG-20261105-001</MessageId>
+    <Timestamp>2026-11-05T14:30:00Z</Timestamp>
+  </Header>
+  <Trade>
+    <TradeId>TRD-FX-994821</TradeId>
+    <AssetClass>FX</AssetClass>
+    <TradeType>FX Forward</TradeType>
+    <Parties>
+      <ReportingParty>
+        <PartyId>BNPAFRPPAXXX</PartyId>
+        <Name>BNP Paribas Paris</Name>
+        <AccountId>ACC-GLOBAL-7719-FX</AccountId>
+      </ReportingParty>
+      <Counterparty>
+        <PartyId>DEUTDEDDXXXX</PartyId>
+        <Name>Deutsche Bank AG</Name>
+      </Counterparty>
+    </Parties>
+    <Details>
+      <Direction>BUY</Direction>
+      <BaseCurrency>EUR</BaseCurrency>
+      <QuoteCurrency>USD</QuoteCurrency>
+      <BoughtCurrency>EUR</BoughtCurrency>
+      <SoldCurrency>USD</SoldCurrency>
+      <NotionalAmount>18000000.00</NotionalAmount>
+      <CounterAmount>19503000.00</CounterAmount>
+      <ExchangeRate>1.0835</ExchangeRate>
+      <TradeDate>2026-11-05</TradeDate>
+      <ValueDate>2027-01-20</ValueDate>
+    </Details>
+  </Trade>
+</FXTradeConfirmation>

@@ -1,0 +1,111 @@
+{
+  "name": "Generic FX Trade XML",
+  "description": "Mapping for standard FX trade XML structures with Trade, Parties, Details",
+  "mappings": [
+    {
+      "target_path": "asset_class",
+      "xpath": "//Trade/AssetClass/text()",
+      "data_type": "string",
+      "default_value": "FX",
+      "transform": null
+    },
+    {
+      "target_path": "trade_type",
+      "xpath": "//Trade/TradeType/text()",
+      "data_type": "string",
+      "default_value": "FX Spot",
+      "transform": null
+    },
+    {
+      "target_path": "reporting_party",
+      "xpath": "//ReportingParty/Name/text() | //ReportingParty/PartyId/text()",
+      "data_type": "string",
+      "default_value": "BNPAFRPPAXXX",
+      "transform": null
+    },
+    {
+      "target_path": "counterparty",
+      "xpath": "//Counterparty/Name/text() | //Counterparty/PartyId/text()",
+      "data_type": "string",
+      "default_value": "DEUTDEDDXXXX",
+      "transform": null
+    },
+    {
+      "target_path": "account_id",
+      "xpath": "//ReportingParty/AccountId/text()",
+      "data_type": "string",
+      "default_value": "ACC-GLOBAL-7719-FX",
+      "transform": null
+    },
+    {
+      "target_path": "direction",
+      "xpath": "//Details/Direction/text()",
+      "data_type": "string",
+      "default_value": "BUY",
+      "transform": null
+    },
+    {
+      "target_path": "base_currency",
+      "xpath": "//Details/BaseCurrency/text()",
+      "data_type": "string",
+      "default_value": "EUR",
+      "transform": null
+    },
+    {
+      "target_path": "quote_currency",
+      "xpath": "//Details/QuoteCurrency/text()",
+      "data_type": "string",
+      "default_value": "USD",
+      "transform": null
+    },
+    {
+      "target_path": "reporting_party_buys",
+      "xpath": "//Details/BoughtCurrency/text()",
+      "data_type": "string",
+      "default_value": "EUR",
+      "transform": null
+    },
+    {
+      "target_path": "reporting_party_sells",
+      "xpath": "//Details/SoldCurrency/text()",
+      "data_type": "string",
+      "default_value": "USD",
+      "transform": null
+    },
+    {
+      "target_path": "notional_amount",
+      "xpath": "//Details/NotionalAmount/text()",
+      "data_type": "float",
+      "default_value": "18000000.00",
+      "transform": null
+    },
+    {
+      "target_path": "counter_amount",
+      "xpath": "//Details/CounterAmount/text()",
+      "data_type": "float",
+      "default_value": "19503000.00",
+      "transform": null
+    },
+    {
+      "target_path": "trade_date",
+      "xpath": "//Details/TradeDate/text()",
+      "data_type": "date",
+      "default_value": "2026-11-05",
+      "transform": null
+    },
+    {
+      "target_path": "value_date",
+      "xpath": "//Details/ValueDate/text()",
+      "data_type": "date",
+      "default_value": "2027-01-20",
+      "transform": null
+    },
+    {
+      "target_path": "rate",
+      "xpath": "//Details/ExchangeRate/text()",
+      "data_type": "float",
+      "default_value": "1.0835",
+      "transform": null
+    }
+  ]
+}

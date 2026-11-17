@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<executionNotification xmlns="http://www.fpml.org/FpML-5/confirmation" version="5-10">
+  <header>
+    <messageId messageIdScheme="http://www.firm.com/messageId">MSG-FPML-00821</messageId>
+    <sentBy>BNPAFRPPAXXX</sentBy>
+    <sendTo>GOLDMANUSA</sendTo>
+    <creationTimestamp>2026-11-05T09:15:00Z</creationTimestamp>
+  </header>
+  <trade>
+    <tradeHeader>
+      <partyTradeIdentifier>
+        <partyReference href="party1"/>
+        <tradeId tradeIdScheme="http://www.firm.com/trade-id">FPML-TRD-2026-881</tradeId>
+      </partyTradeIdentifier>
+      <tradeDate>2026-11-05</tradeDate>
+    </tradeHeader>
+    <fxSingleLeg>
+      <productType>FX Forward</productType>
+      <exchangedCurrency1>
+        <payerPartyReference href="party2"/>
+        <receiverPartyReference href="party1"/>
+        <paymentAmount>
+          <currency>EUR</currency>
+          <amount>25000000.00</amount>
+        </paymentAmount>
+      </exchangedCurrency1>
+      <exchangedCurrency2>
+        <payerPartyReference href="party1"/>
+        <receiverPartyReference href="party2"/>
+        <paymentAmount>
+          <currency>USD</currency>
+          <amount>27312500.00</amount>
+        </paymentAmount>
+      </exchangedCurrency2>
+      <valueDate>2027-02-15</valueDate>
+      <exchangeRate>
+        <quotedCurrencyPair>
+          <currency1>EUR</currency1>
+          <currency2>USD</currency2>
+          <quoteBasis>Currency2PerCurrency1</quoteBasis>
+        </quotedCurrencyPair>
+        <rate>1.0925</rate>
+      </exchangeRate>
+    </fxSingleLeg>
+  </trade>
+  <party id="party1">
+    <partyId partyIdScheme="http://www.fpml.org/coding-scheme/external/iso9362">BNPAFRPPAXXX</partyId>
+    <partyName>BNP Paribas FX Desk</partyName>
+    <account id="acc1">
+      <accountId>ACC-CORP-984210-FX</accountId>
+    </account>
+  </party>
+  <party id="party2">
+    <partyId partyIdScheme="http://www.fpml.org/coding-scheme/external/iso9362">GOLDMANUSA</partyId>
+    <partyName>Goldman Sachs International</partyName>
+  </party>
+</executionNotification>
