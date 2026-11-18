@@ -15,8 +15,15 @@ A financial trade confirmation ingestion engine that converts **SWIFT MT300**, *
    - **Interactive Tree & XPath Explorer**: Discovers and displays all leaf nodes, attributes, and sample values in any XML document.
    - **Live XPath Query Tester**: Evaluate and test XPath expressions in real-time.
    - **Dynamic Field Mapping Table**: Map source XPath expressions to target JSON fields with type casting (`string`, `float`, `int`, `date`, `boolean`), default fallbacks, and transforms (`upper`, `lower`, `clean_amount`, `date_iso`).
+   - **🔀 Multi-Field Conditional Logic Rules Builder**:
+     - Define flexible business rules across two fields or literals:
+       `IF condition1 [AND / OR condition2] THEN target = then_value ELSE target = else_value`
+     - Example: If `trade_date == value_date` AND `asset_class == 'FX'`, set `trade_type` to `'FX Spot'`, otherwise `'FX Forward'`.
+     - Supports field-to-field dynamic comparisons, field-to-literal comparisons, and raw XPath comparisons.
+     - Supports full operator set (`==`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `not_contains`, `is_empty`, `is_not_empty`).
+     - Real-time rule evaluation table showing individual operand resolutions, boolean outcomes, branch selection (`THEN` vs `ELSE`), and resolved target values.
    - **Auto-Inference**: Automatically analyzes XML document structures to generate accurate XPath mappings with a single click.
-   - **Profile Management**: Save, load, export, and import mapping profiles (`.json`). Pre-packaged with:
+   - **Profile Management**: Save, load, export, and import mapping profiles (`.json`) including all field mappings and conditional logic rules. Pre-packaged with:
      - `Generic FX Trade XML`
      - `FpML 5.x FX Trade Confirmation`
    - **Live JSON Preview & Validation**: Test transformations instantly with schema validation against the standardized Pydantic `FXTradeConfirmation` model.

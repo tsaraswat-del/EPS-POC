@@ -372,9 +372,22 @@ with tab1:
             if chosen_profile_name != "⚡ Auto-Detect & Infer Mappings":
                 selected_profile = next((p for p in available_profiles if p.name == chosen_profile_name), None)
                 if selected_profile:
-                    with st.expander(f"👁️ View Active Mappings for '{selected_profile.name}' ({len(selected_profile.mappings)} fields)"):
+                    rule_count = len(selected_profile.conditional_rules)
+                    with st.expander(f"👁️ View Active Mappings for '{selected_profile.name}' ({len(selected_profile.mappings)} fields, {rule_count} conditional rules)"):
                         df_view = pd.DataFrame([m.model_dump() for m in selected_profile.mappings])
                         st.dataframe(df_view, use_container_width=True)
+                        if selected_profile.conditional_rules:
+                            st.markdown("**🔀 Multi-Field Conditional Logic Rules:**")
+                            rules_summary = []
+                            for r in selected_profile.conditional_rules:
+                                c1_s = f"{r.condition1.field_or_xpath} {r.condition1.operator} {r.condition1.value} ({r.condition1.value_type})"
+                                c2_s = f" {r.logical_op} {r.condition2.field_or_xpath} {r.condition2.operator} {r.condition2.value} ({r.condition2.value_type})" if r.condition2 and r.logical_op else ""
+                                rules_summary.append({
+                                    "Target Field": r.target_field,
+                                    "Logic Formula": f"IF {c1_s}{c2_s} THEN '{r.then_value}' ELSE '{r.else_value}'",
+                                    "Description": r.description
+                                })
+                            st.dataframe(pd.DataFrame(rules_summary), use_container_width=True)
 
         if st.button("🚀 Process & Convert to JSON", type="primary", key="btn_process_main"):
             with st.spinner("Extracting parameters and standardizing..."):
@@ -503,7 +516,7 @@ with tab2:
         key="mapper_profile_select"
     )
 
-    # Initialize session state for mappings table
+    # Initialize session state for mappings table and conditional rules
     if "mapping_rows" not in st.session_state or st.session_state.get("last_profile_choice") != selected_prof_choice:
         st.session_state["last_profile_choice"] = selected_prof_choice
         if selected_prof_choice != "Create New Profile":
@@ -512,6 +525,7 @@ with tab2:
                 st.session_state["profile_name"] = p.name
                 st.session_state["profile_desc"] = p.description
                 st.session_state["mapping_rows"] = [m.model_dump() for m in p.mappings]
+                st.session_state["conditional_rules"] = [r.model_dump() for r in p.conditional_rules]
         else:
             st.session_state["profile_name"] = "Custom XML Profile"
             st.session_state["profile_desc"] = "User-defined XPath to JSON mappings"
@@ -534,6 +548,32 @@ with tab2:
                 {"target_path": "rate", "xpath": "//ExchangeRate/text()", "data_type": "float", "default_value": "1.0850", "transform": None},
             ]
             st.session_state["mapping_rows"] = default_fields
+            st.session_state["conditional_rules"] = [
+                {
+                    "rule_id": "rule_trade_type_sample",
+                    "description": "Determine Spot vs Forward: IF trade_date == value_date AND asset_class == 'FX' THEN 'FX Spot' ELSE 'FX Forward'",
+                    "target_field": "trade_type",
+                    "condition1": {
+                        "field_or_xpath": "trade_date",
+                        "operator": "==",
+                        "value_type": "field",
+                        "value": "value_date"
+                    },
+                    "logical_op": "AND",
+                    "condition2": {
+                        "field_or_xpath": "asset_class",
+                        "operator": "==",
+                        "value_type": "literal",
+                        "value": "FX"
+                    },
+                    "then_value": "FX Spot",
+                    "else_value": "FX Forward",
+                    "data_type": "string"
+                }
+            ]
+
+    if "conditional_rules" not in st.session_state:
+        st.session_state["conditional_rules"] = []
 
     col_pn1, col_pn2 = st.columns([2, 3])
     with col_pn1:
@@ -565,18 +605,21 @@ with tab2:
         if st.button("🔄 Reset Standard Schema"):
             st.session_state["last_profile_choice"] = None
             st.session_state.pop("mapping_rows", None)
+            st.session_state.pop("conditional_rules", None)
             st.rerun()
     with b_col4:
         # Save Profile to disk
         if st.button("💾 Save Profile", type="primary"):
             current_mappings = [xme.FieldMapping(**r) for r in st.session_state.get("mapping_rows", [])]
+            current_rules = [xme.ConditionalRule(**r) for r in st.session_state.get("conditional_rules", [])]
             new_profile = xme.MappingProfile(
                 name=prof_name.strip() or "Custom XML Profile",
                 description=prof_desc.strip(),
-                mappings=current_mappings
+                mappings=current_mappings,
+                conditional_rules=current_rules
             )
             saved_path = xme.save_profile(new_profile)
-            st.success(f"Profile saved to: `{os.path.basename(saved_path)}`")
+            st.success(f"Profile saved to: `{os.path.basename(saved_path)}` ({len(current_mappings)} fields, {len(current_rules)} conditional rules)")
             st.rerun()
 
     # 3. Interactive Data Editor for Mappings
@@ -603,7 +646,7 @@ with tab2:
 
     # Real-Time Mapping Extraction Verification Table
     if current_xml_content.strip():
-        with st.expander("📊 Live Field Extraction Verification (Evaluated on Current XML)", expanded=True):
+        with st.expander("📊 Live Field Extraction Verification (Evaluated on Current XML)", expanded=False):
             try:
                 tree = xme.parse_xml_tree(current_xml_content, strip_namespaces=True)
                 verification_data = []
@@ -622,8 +665,253 @@ with tab2:
             except Exception as ex:
                 st.error(f"Error evaluating verification table: {ex}")
 
-    # 4. Test Transformation & Live Output Preview
-    st.markdown("### 4. Test Transformation & Preview JSON")
+    # ===================================================================
+    # 4. Multi-Field Conditional Logic Rules Builder
+    # ===================================================================
+    st.markdown("### 4. 🔀 Multi-Field Conditional Logic Rules")
+    st.caption(
+        "Define flexible conditional logic using two fields or literals: "
+        "e.g., **IF** `trade_date == value_date` **AND** `asset_class == 'FX'` **THEN** `trade_type = 'FX Spot'` **ELSE** `'FX Forward'`. "
+        "Rules evaluate dynamically after base XPath mappings are resolved."
+    )
+
+    current_rules_list = st.session_state.get("conditional_rules", [])
+
+    # Display Active Rules Table & Management
+    if current_rules_list:
+        st.markdown(f"**Active Conditional Rules ({len(current_rules_list)}):**")
+        rule_display_records = []
+        for idx, r in enumerate(current_rules_list):
+            c1 = r.get("condition1", {})
+            c1_str = f"{c1.get('field_or_xpath')} {c1.get('operator')} '{c1.get('value')}'"
+            if c1.get("value_type") == "field":
+                c1_str = f"{c1.get('field_or_xpath')} {c1.get('operator')} [{c1.get('value')}]"
+
+            c2 = r.get("condition2")
+            c2_str = ""
+            if c2 and r.get("logical_op"):
+                if c2.get("value_type") == "field":
+                    c2_str = f" {r.get('logical_op')} {c2.get('field_or_xpath')} {c2.get('operator')} [{c2.get('value')}]"
+                else:
+                    c2_str = f" {r.get('logical_op')} {c2.get('field_or_xpath')} {c2.get('operator')} '{c2.get('value')}'"
+
+            rule_display_records.append({
+                "#": idx + 1,
+                "Target Field": r.get("target_field"),
+                "Condition Logic": f"IF {c1_str}{c2_str} THEN '{r.get('then_value')}' ELSE '{r.get('else_value')}'",
+                "Description": r.get("description", "")
+            })
+
+        st.dataframe(pd.DataFrame(rule_display_records), use_container_width=True)
+
+        # Rule Deletion row
+        del_col1, del_col2 = st.columns([3, 1])
+        with del_col1:
+            rule_to_delete_idx = st.selectbox(
+                "Select a rule to remove:",
+                options=list(range(len(current_rules_list))),
+                format_func=lambda i: f"Rule #{i+1}: {current_rules_list[i].get('target_field')} - {current_rules_list[i].get('description')}",
+                key="select_del_rule"
+            )
+        with del_col2:
+            st.write("")
+            st.write("")
+            if st.button("🗑️ Delete Selected Rule", key="btn_del_rule"):
+                current_rules_list.pop(rule_to_delete_idx)
+                st.session_state["conditional_rules"] = current_rules_list
+                st.success("Rule removed.")
+                st.rerun()
+
+        # Live Evaluation of Conditional Rules on Current XML
+        if current_xml_content.strip():
+            with st.expander("⚡ Live Conditional Rules Evaluation (Current XML)", expanded=True):
+                try:
+                    tree = xme.parse_xml_tree(current_xml_content, strip_namespaces=True)
+                    base_dict = {}
+                    for r in st.session_state.get("mapping_rows", []):
+                        m_obj = xme.FieldMapping(**r)
+                        val, _, _ = xme.extract_field_value(tree, m_obj)
+                        base_dict[m_obj.target_path] = val
+
+                    eval_rows = []
+                    for r in current_rules_list:
+                        rule_obj = xme.ConditionalRule(**r)
+                        c1 = rule_obj.condition1
+                        c1_l = xme.resolve_operand_value(c1.field_or_xpath, base_dict, tree)
+                        c1_r = xme.resolve_operand_value(c1.value, base_dict, tree) if c1.value_type == "field" else c1.value
+                        c1_str_eval = f"{c1.field_or_xpath} ('{c1_l}') {c1.operator} '{c1_r}'"
+
+                        formula_str = c1_str_eval
+                        if rule_obj.logical_op and rule_obj.condition2:
+                            c2 = rule_obj.condition2
+                            c2_l = xme.resolve_operand_value(c2.field_or_xpath, base_dict, tree)
+                            c2_r = xme.resolve_operand_value(c2.value, base_dict, tree) if c2.value_type == "field" else c2.value
+                            formula_str += f" {rule_obj.logical_op} {c2.field_or_xpath} ('{c2_l}') {c2.operator} '{c2_r}'"
+
+                        rule_eval = xme.evaluate_conditional_rule(rule_obj, base_dict, tree)
+                        rule_passed = rule_eval["combined_result"]
+                        resolved_val = rule_eval["assigned_value"]
+                        eval_rows.append({
+                            "Target Field": rule_obj.target_field,
+                            "Condition Evaluated": formula_str,
+                            "Result": "✅ TRUE" if rule_passed else "❌ FALSE",
+                            "Branch Taken": f"THEN ➔ '{rule_obj.then_value}'" if rule_passed else f"ELSE ➔ '{rule_obj.else_value}'",
+                            "Resolved Value": str(resolved_val)
+                        })
+                    st.dataframe(pd.DataFrame(eval_rows), use_container_width=True)
+                except Exception as ex_rule:
+                    st.warning(f"Could not live-evaluate conditional rules: {ex_rule}")
+    else:
+        st.info("No conditional rules configured for this profile yet. You can add one below.")
+
+    # Rule Builder Form
+    with st.expander("➕ Create / Add a Conditional Logic Rule", expanded=(len(current_rules_list) == 0)):
+        # List of candidate target fields from mapping rows
+        available_fields = [r.get("target_path") for r in st.session_state.get("mapping_rows", []) if r.get("target_path")]
+        if not available_fields:
+            available_fields = ["trade_type", "direction", "asset_class", "trade_date", "value_date", "notional_amount"]
+
+        # Quick Preset Buttons
+        st.markdown("**Quick Preset Templates:**")
+        preset_cols = st.columns(3)
+        with preset_cols[0]:
+            if st.button("📌 Spot vs Forward Rule", key="btn_preset_spot_fwd"):
+                st.session_state["conditional_rules"].append({
+                    "rule_id": f"rule_spot_{str(uuid.uuid4())[:6]}",
+                    "description": "IF trade_date == value_date AND asset_class == 'FX' THEN 'FX Spot' ELSE 'FX Forward'",
+                    "target_field": "trade_type",
+                    "condition1": {"field_or_xpath": "trade_date", "operator": "==", "value_type": "field", "value": "value_date"},
+                    "logical_op": "AND",
+                    "condition2": {"field_or_xpath": "asset_class", "operator": "==", "value_type": "literal", "value": "FX"},
+                    "then_value": "FX Spot",
+                    "else_value": "FX Forward",
+                    "data_type": "string"
+                })
+                st.rerun()
+        with preset_cols[1]:
+            if st.button("📌 Direction Check Rule", key="btn_preset_direction"):
+                st.session_state["conditional_rules"].append({
+                    "rule_id": f"rule_dir_{str(uuid.uuid4())[:6]}",
+                    "description": "IF reporting_party_buys == 'USD' THEN 'BUY' ELSE 'SELL'",
+                    "target_field": "direction",
+                    "condition1": {"field_or_xpath": "reporting_party_buys", "operator": "==", "value_type": "literal", "value": "USD"},
+                    "logical_op": None,
+                    "condition2": None,
+                    "then_value": "BUY",
+                    "else_value": "SELL",
+                    "data_type": "string"
+                })
+                st.rerun()
+        with preset_cols[2]:
+            if st.button("📌 Large Trade Flag Rule", key="btn_preset_large_trade"):
+                st.session_state["conditional_rules"].append({
+                    "rule_id": f"rule_notional_{str(uuid.uuid4())[:6]}",
+                    "description": "IF notional_amount >= 10000000 THEN 'BLOCK' ELSE 'STANDARD'",
+                    "target_field": "trade_tier",
+                    "condition1": {"field_or_xpath": "notional_amount", "operator": ">=", "value_type": "literal", "value": "10000000"},
+                    "logical_op": None,
+                    "condition2": None,
+                    "then_value": "BLOCK",
+                    "else_value": "STANDARD",
+                    "data_type": "string"
+                })
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("**Custom Rule Builder:**")
+
+        f_col1, f_col2 = st.columns([1, 2])
+        with f_col1:
+            builder_target_field = st.selectbox("Target JSON Field to Set:", options=available_fields + ["<Custom Field>"], key="cr_target_field")
+            if builder_target_field == "<Custom Field>":
+                builder_target_field = st.text_input("Enter Custom Target Field Name:", value="trade_type", key="cr_custom_tf")
+        with f_col2:
+            builder_desc = st.text_input("Rule Description:", value="Set target based on two conditions", key="cr_desc")
+
+        st.markdown("##### Condition 1 (Primary)")
+        c1_col1, c1_col2, c1_col3, c1_col4 = st.columns([2, 1.2, 1.5, 2])
+        with c1_col1:
+            c1_field = st.selectbox("First Field / XPath:", options=available_fields + ["<Custom Field/XPath>"], index=available_fields.index("trade_date") if "trade_date" in available_fields else 0, key="cr_c1_field")
+            if c1_field == "<Custom Field/XPath>":
+                c1_field = st.text_input("Enter Field or XPath:", value="trade_date", key="cr_c1_custom")
+        with c1_col2:
+            c1_op = st.selectbox("Operator:", ["==", "!=", ">", "<", ">=", "<=", "contains", "not_contains", "is_empty", "is_not_empty"], key="cr_c1_op")
+        with c1_col3:
+            c1_vtype_ui = st.selectbox("Compare With:", ["Another Field (Dynamic)", "Literal Value (Constant)"], key="cr_c1_vtype")
+            c1_vtype = "field" if "Field" in c1_vtype_ui else "literal"
+        with c1_col4:
+            if c1_vtype == "field":
+                c1_val = st.selectbox("Right Operand Field:", options=available_fields + ["<Custom Field/XPath>"], index=available_fields.index("value_date") if "value_date" in available_fields else 0, key="cr_c1_val_field")
+                if c1_val == "<Custom Field/XPath>":
+                    c1_val = st.text_input("Right Field/XPath:", value="value_date", key="cr_c1_val_custom")
+            else:
+                c1_val = st.text_input("Literal Value:", value="FX", key="cr_c1_val_literal")
+
+        st.markdown("##### Second Condition Connector")
+        builder_logical_op = st.selectbox("Logical Connector:", ["None (Single Condition Only)", "AND", "OR"], index=1, key="cr_logical_op")
+
+        c2_clause = None
+        if builder_logical_op in ["AND", "OR"]:
+            st.markdown("##### Condition 2 (Secondary)")
+            c2_col1, c2_col2, c2_col3, c2_col4 = st.columns([2, 1.2, 1.5, 2])
+            with c2_col1:
+                c2_field = st.selectbox("Second Field / XPath:", options=available_fields + ["<Custom Field/XPath>"], index=available_fields.index("asset_class") if "asset_class" in available_fields else 0, key="cr_c2_field")
+                if c2_field == "<Custom Field/XPath>":
+                    c2_field = st.text_input("Enter Field or XPath:", value="asset_class", key="cr_c2_custom")
+            with c2_col2:
+                c2_op = st.selectbox("Operator:", ["==", "!=", ">", "<", ">=", "<=", "contains", "not_contains", "is_empty", "is_not_empty"], key="cr_c2_op")
+            with c2_col3:
+                c2_vtype_ui = st.selectbox("Compare With:", ["Literal Value (Constant)", "Another Field (Dynamic)"], key="cr_c2_vtype")
+                c2_vtype = "field" if "Field" in c2_vtype_ui else "literal"
+            with c2_col4:
+                if c2_vtype == "field":
+                    c2_val = st.selectbox("Right Operand Field:", options=available_fields + ["<Custom Field/XPath>"], key="cr_c2_val_field")
+                    if c2_val == "<Custom Field/XPath>":
+                        c2_val = st.text_input("Right Field/XPath:", value="", key="cr_c2_val_custom")
+                else:
+                    c2_val = st.text_input("Literal Value:", value="FX", key="cr_c2_val_literal")
+
+            c2_clause = {
+                "field_or_xpath": c2_field.strip(),
+                "operator": c2_op,
+                "value_type": c2_vtype,
+                "value": c2_val.strip()
+            }
+
+        st.markdown("##### Resulting Values (THEN / ELSE)")
+        res_col1, res_col2, res_col3 = st.columns([2, 2, 1.5])
+        with res_col1:
+            builder_then = st.text_input("THEN Value (if condition is TRUE):", value="FX Spot", key="cr_then_val")
+        with res_col2:
+            builder_else = st.text_input("ELSE Value (if condition is FALSE):", value="FX Forward", key="cr_else_val")
+        with res_col3:
+            builder_dtype = st.selectbox("Target Data Type:", ["string", "float", "int", "boolean"], key="cr_data_type")
+
+        if st.button("➕ Add Rule to Profile", type="primary", key="btn_add_rule"):
+            new_rule = {
+                "rule_id": f"rule_{str(uuid.uuid4())[:8]}",
+                "description": builder_desc.strip(),
+                "target_field": builder_target_field.strip(),
+                "condition1": {
+                    "field_or_xpath": c1_field.strip(),
+                    "operator": c1_op,
+                    "value_type": c1_vtype,
+                    "value": c1_val.strip()
+                },
+                "logical_op": builder_logical_op if builder_logical_op in ["AND", "OR"] else None,
+                "condition2": c2_clause,
+                "then_value": builder_then,
+                "else_value": builder_else,
+                "data_type": builder_dtype
+            }
+            st.session_state["conditional_rules"].append(new_rule)
+            st.success(f"Added conditional rule for '{builder_target_field}'!")
+            st.rerun()
+
+    # ===================================================================
+    # 5. Test Transformation & Live Output Preview
+    # ===================================================================
+    st.markdown("### 5. Test Transformation & Preview JSON")
 
     test_col1, test_col2 = st.columns([1, 1])
     with test_col1:
@@ -633,10 +921,12 @@ with tab2:
             else:
                 try:
                     active_mappings = [xme.FieldMapping(**r) for r in st.session_state["mapping_rows"]]
+                    active_rules = [xme.ConditionalRule(**r) for r in st.session_state.get("conditional_rules", [])]
                     temp_profile = xme.MappingProfile(
                         name=prof_name,
                         description=prof_desc,
-                        mappings=active_mappings
+                        mappings=active_mappings,
+                        conditional_rules=active_rules
                     )
                     transformed_json, trace = xme.apply_mapping_profile(current_xml_content, temp_profile)
 
@@ -656,6 +946,11 @@ with tab2:
                         file_name=f"{re.sub(r'[^a-zA-Z0-9_-]', '_', prof_name.lower())}_output.json",
                         mime="application/json"
                     )
+
+                    with st.expander("📋 Detailed Execution Audit Trace (Base XPaths + Conditional Rules)", expanded=False):
+                        trace_df = pd.DataFrame(trace)
+                        st.dataframe(trace_df, use_container_width=True)
+
                 except Exception as ex:
                     st.error(f"Transformation failed: {ex}")
 
@@ -664,7 +959,8 @@ with tab2:
         profile_to_export = xme.MappingProfile(
             name=prof_name,
             description=prof_desc,
-            mappings=[xme.FieldMapping(**r) for r in st.session_state.get("mapping_rows", [])]
+            mappings=[xme.FieldMapping(**r) for r in st.session_state.get("mapping_rows", [])],
+            conditional_rules=[xme.ConditionalRule(**r) for r in st.session_state.get("conditional_rules", [])]
         )
         st.download_button(
             label="📥 Export Mapping Profile as JSON",
@@ -681,7 +977,8 @@ with tab2:
                 st.session_state["profile_name"] = imported_profile.name
                 st.session_state["profile_desc"] = imported_profile.description
                 st.session_state["mapping_rows"] = [m.model_dump() for m in imported_profile.mappings]
-                st.success(f"Successfully loaded '{imported_profile.name}' with {len(imported_profile.mappings)} field mappings!")
+                st.session_state["conditional_rules"] = [r.model_dump() for r in imported_profile.conditional_rules]
+                st.success(f"Successfully loaded '{imported_profile.name}' with {len(imported_profile.mappings)} field mappings and {len(imported_profile.conditional_rules)} conditional rules!")
                 st.rerun()
             except Exception as e:
                 st.error(f"Failed to import profile: {e}")

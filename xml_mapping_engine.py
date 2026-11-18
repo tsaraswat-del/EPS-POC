@@ -7,6 +7,7 @@ and converting XML trade documents to standardized JSON models.
 import os
 import re
 import json
+import uuid
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pydantic import BaseModel, Field
 import lxml.etree as ET
@@ -23,10 +24,30 @@ class FieldMapping(BaseModel):
     transform: Optional[str] = Field(default=None, description="Optional transformation: upper, lower, clean_amount, date_iso")
 
 
+class ConditionClause(BaseModel):
+    field_or_xpath: str = Field(description="JSON field name (e.g. 'trade_date') or XPath (e.g. '//TradeDate/text()')")
+    operator: str = Field(default="==", description="==, !=, >, <, >=, <=, contains, not_contains, is_empty, is_not_empty")
+    value_type: str = Field(default="literal", description="'literal' for constant, 'field' for another field/xpath")
+    value: str = Field(default="", description="Literal constant or another field/xpath to compare against")
+
+
+class ConditionalRule(BaseModel):
+    rule_id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    description: str = Field(default="", description="User-friendly explanation of the conditional logic")
+    target_field: str = Field(default="trade_type", description="Target JSON field to populate based on rule evaluation")
+    condition1: ConditionClause
+    logical_op: Optional[str] = Field(default=None, description="AND, OR, or None for a single condition")
+    condition2: Optional[ConditionClause] = Field(default=None, description="Optional second condition clause")
+    then_value: str = Field(default="FX Spot", description="Value to assign if condition evaluates to True")
+    else_value: str = Field(default="FX Forward", description="Value to assign if condition evaluates to False")
+    data_type: str = Field(default="string", description="Type casting: string, float, int, boolean")
+
+
 class MappingProfile(BaseModel):
     name: str = Field(description="Name of the mapping profile")
     description: str = Field(default="", description="Description of the profile or format")
     mappings: List[FieldMapping] = Field(default_factory=list)
+    conditional_rules: List[ConditionalRule] = Field(default_factory=list)
 
 
 def clean_amount(val_str: Any) -> float:
@@ -237,9 +258,169 @@ def extract_field_value(tree: ET._Element, mapping: FieldMapping) -> Tuple[Any, 
     return val, status, raw_str
 
 
+def resolve_operand_value(operand: str, value_type: str, result_dict: Dict[str, Any], tree: Optional[ET._Element] = None) -> Any:
+    """
+    Resolves operand to its actual value.
+    If value_type == 'literal': returns operand as a raw string.
+    If value_type == 'field':
+        - Checks if operand exists in result_dict (including nested dot-paths)
+        - Else if operand starts with '/' or '//', evaluates XPath against tree
+        - Otherwise returns operand as string fallback
+    """
+    if value_type == "literal":
+        return operand
+
+    op = str(operand).strip()
+    if (op.startswith("/") or op.startswith("//")) and tree is not None:
+        try:
+            matches = evaluate_xpath(tree, op)
+            return matches[0] if matches else None
+        except Exception:
+            return None
+
+    # Try lookup in result_dict
+    parts = op.split(".")
+    curr = result_dict
+    found = True
+    for p in parts:
+        if isinstance(curr, dict) and p in curr:
+            curr = curr[p]
+        else:
+            found = False
+            break
+    if found:
+        return curr
+
+    return op
+
+
+def evaluate_condition_clause(clause: ConditionClause, result_dict: Dict[str, Any], tree: Optional[ET._Element] = None) -> Tuple[bool, Any, Any]:
+    """
+    Evaluates a single condition clause against result_dict and XML tree.
+    Returns: (result_bool, resolved_left_val, resolved_right_val)
+    """
+    left_val = resolve_operand_value(clause.field_or_xpath, "field", result_dict, tree)
+    right_val = resolve_operand_value(clause.value, clause.value_type, result_dict, tree)
+
+    op = clause.operator.strip()
+
+    if op == "is_empty":
+        res = (left_val is None or str(left_val).strip() == "")
+        return res, left_val, right_val
+    elif op == "is_not_empty":
+        res = (left_val is not None and str(left_val).strip() != "")
+        return res, left_val, right_val
+
+    # Numeric comparison check
+    num_left = None
+    num_right = None
+    try:
+        if left_val is not None and str(left_val).strip() != "":
+            num_left = clean_amount(left_val)
+        if right_val is not None and str(right_val).strip() != "":
+            num_right = clean_amount(right_val)
+    except Exception:
+        pass
+
+    if num_left is not None and num_right is not None and op in ["==", "!=", ">", "<", ">=", "<="]:
+        # Perform numeric comparison only if both values look like numbers
+        str_l = str(left_val).strip()
+        str_r = str(right_val).strip()
+        # Ensure they are truly numeric (not arbitrary strings like 'FX' or dates)
+        is_l_num = bool(re.match(r"^[\d,.]+$", str_l))
+        is_r_num = bool(re.match(r"^[\d,.]+$", str_r))
+        if is_l_num and is_r_num:
+            if op == "==":
+                return num_left == num_right, left_val, right_val
+            elif op == "!=":
+                return num_left != num_right, left_val, right_val
+            elif op == ">":
+                return num_left > num_right, left_val, right_val
+            elif op == "<":
+                return num_left < num_right, left_val, right_val
+            elif op == ">=":
+                return num_left >= num_right, left_val, right_val
+            elif op == "<=":
+                return num_left <= num_right, left_val, right_val
+
+    # String comparison (case-insensitive for equals/contains)
+    str_left = "" if left_val is None else str(left_val).strip()
+    str_right = "" if right_val is None else str(right_val).strip()
+
+    if op == "==":
+        res = str_left.lower() == str_right.lower()
+    elif op == "!=":
+        res = str_left.lower() != str_right.lower()
+    elif op == ">":
+        res = str_left > str_right
+    elif op == "<":
+        res = str_left < str_right
+    elif op == ">=":
+        res = str_left >= str_right
+    elif op == "<=":
+        res = str_left <= str_right
+    elif op == "contains":
+        res = str_right.lower() in str_left.lower()
+    elif op == "not_contains":
+        res = str_right.lower() not in str_left.lower()
+    else:
+        res = False
+
+    return res, left_val, right_val
+
+
+def evaluate_conditional_rule(rule: ConditionalRule, result_dict: Dict[str, Any], tree: Optional[ET._Element] = None) -> Dict[str, Any]:
+    """
+    Evaluates a multi-condition rule:
+    IF Condition1 [AND/OR Condition2] THEN target = then_value ELSE target = else_value.
+    """
+    res1, l1, r1 = evaluate_condition_clause(rule.condition1, result_dict, tree)
+
+    combined_res = res1
+    clause2_info = None
+
+    if rule.logical_op and rule.condition2:
+        res2, l2, r2 = evaluate_condition_clause(rule.condition2, result_dict, tree)
+        clause2_info = {
+            "field": rule.condition2.field_or_xpath,
+            "operator": rule.condition2.operator,
+            "value": rule.condition2.value,
+            "left_resolved": l2,
+            "right_resolved": r2,
+            "result": res2
+        }
+        if rule.logical_op.upper() == "AND":
+            combined_res = res1 and res2
+        elif rule.logical_op.upper() == "OR":
+            combined_res = res1 or res2
+
+    chosen_raw = rule.then_value if combined_res else rule.else_value
+    final_val = cast_value(chosen_raw, rule.data_type)
+
+    return {
+        "rule_id": rule.rule_id,
+        "description": rule.description,
+        "target_field": rule.target_field,
+        "clause1": {
+            "field": rule.condition1.field_or_xpath,
+            "operator": rule.condition1.operator,
+            "value": rule.condition1.value,
+            "left_resolved": l1,
+            "right_resolved": r1,
+            "result": res1
+        },
+        "logical_op": rule.logical_op,
+        "clause2": clause2_info,
+        "combined_result": combined_res,
+        "assigned_value": final_val,
+        "branch_taken": "THEN" if combined_res else "ELSE"
+    }
+
+
 def apply_mapping_profile(xml_content: Union[str, bytes], profile: MappingProfile) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """
-    Applies a MappingProfile against an XML document.
+    Applies a MappingProfile against an XML document, including base XPath mappings
+    followed by conditional logic rules.
     Returns:
       (result_dict, execution_trace)
     """
@@ -247,6 +428,7 @@ def apply_mapping_profile(xml_content: Union[str, bytes], profile: MappingProfil
     result_dict: Dict[str, Any] = {}
     trace: List[Dict[str, Any]] = []
 
+    # 1. Base XPath field extractions
     for mapping in profile.mappings:
         val, status, raw_extracted = extract_field_value(tree, mapping)
         set_json_path(result_dict, mapping.target_path, val)
@@ -257,6 +439,22 @@ def apply_mapping_profile(xml_content: Union[str, bytes], profile: MappingProfil
             "extracted_raw": raw_extracted,
             "final_value": val,
             "status": status
+        })
+
+    # 2. Evaluate Conditional Logic Rules (e.g. IF condition1 AND condition2 THEN target=X ELSE Y)
+    for rule in profile.conditional_rules:
+        eval_info = evaluate_conditional_rule(rule, result_dict, tree)
+        set_json_path(result_dict, rule.target_field, eval_info["assigned_value"])
+        
+        c1_desc = f"{rule.condition1.field_or_xpath} {rule.condition1.operator} {rule.condition1.value}"
+        c2_desc = f" {rule.logical_op} {rule.condition2.field_or_xpath} {rule.condition2.operator} {rule.condition2.value}" if rule.logical_op and rule.condition2 else ""
+        trace.append({
+            "target_path": f"[RULE] {rule.target_field}",
+            "xpath": f"IF {c1_desc}{c2_desc}",
+            "data_type": rule.data_type,
+            "extracted_raw": f"Evaluated: {eval_info['combined_result']} ➔ {eval_info['branch_taken']} branch ({eval_info['assigned_value']})",
+            "final_value": eval_info["assigned_value"],
+            "status": "SUCCESS (RULE)"
         })
 
     # Ensure direction & currencies alignment if standard FX fields exist
@@ -450,6 +648,19 @@ def _ensure_default_profiles():
                 FieldMapping(target_path="trade_date", xpath="//Details/TradeDate/text()", data_type="date", default_value="2026-11-05"),
                 FieldMapping(target_path="value_date", xpath="//Details/ValueDate/text()", data_type="date", default_value="2027-01-20"),
                 FieldMapping(target_path="rate", xpath="//Details/ExchangeRate/text()", data_type="float", default_value="1.0835"),
+            ],
+            conditional_rules=[
+                ConditionalRule(
+                    rule_id="rule_trade_type",
+                    description="Determine Spot vs Forward: IF trade_date == value_date AND asset_class == 'FX' THEN 'FX Spot' ELSE 'FX Forward'",
+                    target_field="trade_type",
+                    condition1=ConditionClause(field_or_xpath="trade_date", operator="==", value_type="field", value="value_date"),
+                    logical_op="AND",
+                    condition2=ConditionClause(field_or_xpath="asset_class", operator="==", value_type="literal", value="FX"),
+                    then_value="FX Spot",
+                    else_value="FX Forward",
+                    data_type="string"
+                )
             ]
         )
         save_profile(p1)

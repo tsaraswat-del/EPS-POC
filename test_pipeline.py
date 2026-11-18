@@ -82,6 +82,86 @@ class TestTradeIngestionPipeline(unittest.TestCase):
         self.assertEqual(mapped_dict["reporting_party_buys"], "EUR")
         self.assertEqual(mapped_dict["notional_amount"], 18000000.0)
 
+    def test_two_field_conditional_rule_spot_vs_forward(self):
+        rule = xme.ConditionalRule(
+            rule_id="test_spot_fwd",
+            description="IF trade_date == value_date AND asset_class == 'FX' THEN 'FX Spot' ELSE 'FX Forward'",
+            target_field="trade_type",
+            condition1=xme.ConditionClause(
+                field_or_xpath="trade_date",
+                operator="==",
+                value_type="field",
+                value="value_date"
+            ),
+            logical_op="AND",
+            condition2=xme.ConditionClause(
+                field_or_xpath="asset_class",
+                operator="==",
+                value_type="literal",
+                value="FX"
+            ),
+            then_value="FX Spot",
+            else_value="FX Forward",
+            data_type="string"
+        )
+        # Case 1: Same dates & asset FX -> FX Spot
+        base_dict_1 = {"trade_date": "2026-11-05", "value_date": "2026-11-05", "asset_class": "FX"}
+        res1 = xme.evaluate_conditional_rule(rule, base_dict_1)
+        self.assertTrue(res1["combined_result"])
+        self.assertEqual(res1["assigned_value"], "FX Spot")
+        self.assertEqual(res1["branch_taken"], "THEN")
+
+        # Case 2: Different dates & asset FX -> FX Forward
+        base_dict_2 = {"trade_date": "2026-11-05", "value_date": "2027-01-20", "asset_class": "FX"}
+        res2 = xme.evaluate_conditional_rule(rule, base_dict_2)
+        self.assertFalse(res2["combined_result"])
+        self.assertEqual(res2["assigned_value"], "FX Forward")
+        self.assertEqual(res2["branch_taken"], "ELSE")
+
+        # Case 3: Same dates but asset != FX -> FX Forward
+        base_dict_3 = {"trade_date": "2026-11-05", "value_date": "2026-11-05", "asset_class": "EQUITY"}
+        res3 = xme.evaluate_conditional_rule(rule, base_dict_3)
+        self.assertFalse(res3["combined_result"])
+        self.assertEqual(res3["assigned_value"], "FX Forward")
+        self.assertEqual(res3["branch_taken"], "ELSE")
+
+    def test_conditional_rule_numeric_and_logical_or(self):
+        rule = xme.ConditionalRule(
+            rule_id="test_tier_rule",
+            description="IF notional_amount >= 10000000 OR counterparty contains 'DEUT' THEN 'PRIORITY' ELSE 'STANDARD'",
+            target_field="tier",
+            condition1=xme.ConditionClause(
+                field_or_xpath="notional_amount",
+                operator=">=",
+                value_type="literal",
+                value="10000000"
+            ),
+            logical_op="OR",
+            condition2=xme.ConditionClause(
+                field_or_xpath="counterparty",
+                operator="contains",
+                value_type="literal",
+                value="DEUT"
+            ),
+            then_value="PRIORITY",
+            else_value="STANDARD",
+            data_type="string"
+        )
+        # Meets first condition
+        res_1 = xme.evaluate_conditional_rule(rule, {"notional_amount": 15000000, "counterparty": "CITI"})
+        self.assertTrue(res_1["combined_result"])
+        self.assertEqual(res_1["assigned_value"], "PRIORITY")
+
+        # Meets second condition
+        res_2 = xme.evaluate_conditional_rule(rule, {"notional_amount": 500000, "counterparty": "DEUTDEDDXXXX"})
+        self.assertTrue(res_2["combined_result"])
+        self.assertEqual(res_2["assigned_value"], "PRIORITY")
+
+        # Meets neither condition
+        res_3 = xme.evaluate_conditional_rule(rule, {"notional_amount": 500000, "counterparty": "CITI"})
+        self.assertFalse(res_3["combined_result"])
+        self.assertEqual(res_3["assigned_value"], "STANDARD")
+
     def test_app_process_trade_document_all_formats(self):
         for path in ["sample_fx_trade.xml", "sample_fpml_fx_trade.xml", "Sample swift-MT300.txt", "sample_trade.txt"]:
             res = app.process_trade_document(path)

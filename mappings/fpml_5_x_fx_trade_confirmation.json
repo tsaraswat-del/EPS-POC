@@ -107,5 +107,28 @@
       "default_value": "1.0925",
       "transform": null
     }
+  ],
+  "conditional_rules": [
+    {
+      "rule_id": "rule_fpml_product_type",
+      "description": "Determine Spot vs Forward: IF trade_date == value_date AND asset_class == 'FX' THEN 'FX Spot' ELSE 'FX Forward'",
+      "target_field": "trade_type",
+      "condition1": {
+        "field_or_xpath": "trade_date",
+        "operator": "==",
+        "value_type": "field",
+        "value": "value_date"
+      },
+      "logical_op": "AND",
+      "condition2": {
+        "field_or_xpath": "asset_class",
+        "operator": "==",
+        "value_type": "literal",
+        "value": "FX"
+      },
+      "then_value": "FX Spot",
+      "else_value": "FX Forward",
+      "data_type": "string"
+    }
   ]
 }
